@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CRUD FastAPI SQLite</title>
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+    <header>
+        <h1>CRUD de Personas</h1>
+        <p>Administra registros de personas con FastAPI + SQLite desde una sola página moderna y reactiva.</p>
+    </header>
+    <main class="container">
+        <div class="grid">
+            <section class="card">
+                <h2 id="form-title">Crear nueva persona</h2>
+                <form id="persona-form">
+                    <input type="hidden" id="persona-id" />
+                    <label for="nombre">Nombre</label>
+                    <input type="text" id="nombre" placeholder="Ej. Ana Pérez" required />
+                    <label for="edad">Edad</label>
+                    <input type="number" id="edad" placeholder="Ej. 28" min="0" max="120" required />
+                    <label for="email">Email</label>
+                    <input type="email" id="email" placeholder="nombre@ejemplo.com" required />
+                    <div style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:1rem;">
+                        <button type="submit" class="primary">Guardar</button>
+                        <button type="button" id="cancelar" class="danger" style="display:none;">Cancelar</button>
+                    </div>
+                </form>
+                <div class="status">
+                    <span id="status-text">Carga de datos activa.</span>
+                </div>
+            </section>
+            <section class="card">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap;">
+                    <div>
+                        <h2>Lista de personas</h2>
+                        <p style="margin:0; color: var(--muted);">Edita o elimina un registro directamente desde la tabla.</p>
+                    </div>
+                    <button type="button" id="refresh" class="success">Actualizar</button>
+                </div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Nombre</th>
+                                <th>Edad</th>
+                                <th>Email</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="personas-body"></tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+    </main>
+    <div id="toast" class="toast"></div>
+    <script>
+        const form = document.getElementById('persona-form');
+        const idInput = document.getElementById('persona-id');
+        const nombreInput = document.getElementById('nombre');
+        const edadInput = document.getElementById('edad');
+        const emailInput = document.getElementById('email');
+        const cancelBtn = document.getElementById('cancelar');
+        const statusText = document.getElementById('status-text');
+        const personasBody = document.getElementById('personas-body');
+        const toast = document.getElementById('toast');
+        const refreshBtn = document.getElementById('refresh');
+        const formTitle = document.getElementById('form-title');
+
+        async function showToast(message) {
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2600);
+        }
+
+        async function fetchPersonas() {
+            statusText.textContent = 'Cargando registros...';
+            try {
+                const response = await fetch('/api/personas');
+                const personas = await response.json();
+                personasBody.innerHTML = personas.map(persona => `
+                    <tr>
+                        <td>${persona.id}</td>
+                        <td>${persona.nombre}</td>
+                        <td>${persona.edad}</td>
+                        <td>${persona.email}</td>
+                        <td class="actions">
+                            <button type="button" onclick="editPersona(${persona.id}, '${persona.nombre}', ${persona.edad}, '${persona.email}')" class="primary">Editar</button>
+                            <button type="button" onclick="deletePersona(${persona.id})" class="danger">Eliminar</button>
+                        </td>
+                    </tr>
+                `).join('');
+                statusText.textContent = personas.length ? 'Registros cargados correctamente.' : 'No hay personas registradas aún.';
+            } catch (error) {
+                statusText.textContent = 'Error al cargar los datos.';
+                showToast('No se pudo obtener la lista.');
+            }
+        }
+
+        window.editPersona = (id, nombre, edad, email) => {
+            idInput.value = id;
+            nombreInput.value = nombre;
+            edadInput.value = edad;
+            emailInput.value = email;
+            formTitle.textContent = 'Editar persona';
+            cancelBtn.style.display = 'inline-flex';
+        };
+
+        cancelBtn.addEventListener('click', () => {
+            idInput.value = '';
+            nombreInput.value = '';
+            edadInput.value = '';
+            emailInput.value = '';
+            formTitle.textContent = 'Crear nueva persona';
+            cancelBtn.style.display = 'none';
+        });
+
+        refreshBtn.addEventListener('click', fetchPersonas);
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const personaId = idInput.value;
+            const payload = {
+                nombre: nombreInput.value.trim(),
+                edad: Number(edadInput.value),
+                email: emailInput.value.trim(),
+            };
+
+            try {
+                const url = personaId ? `/api/personas/${personaId}` : '/api/personas';
+                const method = personaId ? 'PUT' : 'POST';
+                const response = await fetch(url, {
+                    method,
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload),
+                });
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.detail || 'Error al guardar');
+                }
+                await fetchPersonas();
+                showToast(personaId ? 'Persona actualizada.' : 'Persona creada.');
+                form.reset();
+                cancelBtn.style.display = 'none';
+                formTitle.textContent = 'Crear nueva persona';
+                idInput.value = '';
+            } catch (error) {
+                showToast(error.message);
+            }
+        });
+
+        window.deletePersona = async (id) => {
+            if (!confirm('¿Eliminar a esta persona?')) return;
+            try {
+                const response = await fetch(`/api/personas/${id}`, { method: 'DELETE' });
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.detail || 'Error al eliminar');
+                }
+                await fetchPersonas();
+                showToast('Persona eliminada.');
+            } catch (error) {
+                showToast(error.message);
+            }
+        };
+
+        fetchPersonas();
+    </script>
+</body>
+</html>
